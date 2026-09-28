@@ -10,6 +10,7 @@ S.stats=S.stats||{STR:0,STA:0,MND:0,WIL:0,FOC:0,DIS:0};S.logs=S.logs||{};S.level
 S.weight=S.weight||{start:103,current:103,goal:80};
 S.nutritionDays=S.nutritionDays||{};
 S.macroTargets=S.macroTargets||{calories:2000,protein:160,netCarbs:25,fat:140,fiber:30,water:2.5};
+S.fasting=S.fasting||{selectedHours:0,active:false,startAt:null,totalPoints:0,completed24:0,completed48:0};
 const save=()=>localStorage.setItem(KEY,JSON.stringify(S));
 S.calendar=S.calendar||{};
 const dateKey=(d=new Date())=>{let y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
@@ -68,4 +69,25 @@ completeDay.onclick=()=>{
  if(S.level%5===0){S.checkpoint=S.level;alert(`BLOCK COMPLETE — LV${S.level}\nCheckpoint LV${S.level} permanently secured.`)}
  if(S.level<365)S.level++;S.penaltyProcessedThrough=today;save();render()
 };
-reconcileMissedDays();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');render();renderWeightAndMacros();
+
+let fastTick=null;
+function formatDuration(ms){
+ const total=Math.max(0,Math.floor(ms/1000)),h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;
+ return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function renderFast(){
+ const f=S.fasting,targetMs=(Number(f.selectedHours)||0)*3600000,elapsed=f.active&&f.startAt?Math.max(0,Date.now()-f.startAt):0;
+ const pct=targetMs?Math.min(100,elapsed/targetMs*100):0,complete=!!(f.active&&targetMs&&elapsed>=targetMs);
+ document.querySelectorAll('[data-fast-hours]').forEach(b=>{b.classList.toggle('selected',Number(b.dataset.fastHours)===Number(f.selectedHours));b.disabled=!!f.active});
+ fastTimer.textContent=f.active?formatDuration(elapsed):'00:00:00';
+ fastTarget.textContent=f.selectedHours?`${f.selectedHours}H CHALLENGE${f.active?' · RUNNING':''}`:'SELECT 24H OR 48H';
+ fastBar.style.width=pct+'%';fastPct.textContent=`${Math.floor(pct)}% COMPLETE`;fastPoints.textContent=`${f.totalPoints||0} CHALLENGE POINT${(f.totalPoints||0)===1?'':'S'}`;
+ startFast.disabled=!f.selectedHours||f.active;endFast.disabled=!f.active;claimFast.hidden=!complete;startFast.hidden=complete;
+}
+document.querySelectorAll('[data-fast-hours]').forEach(b=>b.onclick=()=>{if(S.fasting.active)return;S.fasting.selectedHours=Number(b.dataset.fastHours);save();renderFast()});
+startFast.onclick=()=>{if(!S.fasting.selectedHours||S.fasting.active)return;S.fasting.active=true;S.fasting.startAt=Date.now();save();renderFast()};
+endFast.onclick=()=>{if(!S.fasting.active)return;if(confirm('End this fasting challenge? There is no penalty.')){S.fasting.active=false;S.fasting.startAt=null;S.fasting.selectedHours=0;save();renderFast()}};
+claimFast.onclick=()=>{const f=S.fasting,targetMs=Number(f.selectedHours)*3600000;if(!f.active||!f.startAt||Date.now()-f.startAt<targetMs)return;const reward=f.selectedHours===48?2:1;f.totalPoints=(f.totalPoints||0)+reward;if(f.selectedHours===48)f.completed48=(f.completed48||0)+1;else f.completed24=(f.completed24||0)+1;S.stats.WIL=(S.stats.WIL||0)+reward;S.stats.DIS=(S.stats.DIS||0)+reward;f.active=false;f.startAt=null;f.selectedHours=0;save();render();renderFast();alert(`FASTING CHALLENGE COMPLETE\n+${reward} WIL · +${reward} DIS`)};
+fastTick=setInterval(renderFast,1000);
+
+reconcileMissedDays();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');render();renderWeightAndMacros();renderFast();
