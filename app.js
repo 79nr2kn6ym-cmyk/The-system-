@@ -7,6 +7,9 @@ const plans={
 const KEY='system-v1';
 const S=JSON.parse(localStorage.getItem(KEY)||'null')||{level:1,checkpoint:0,stats:{STR:0,STA:0,MND:0,WIL:0,FOC:0,DIS:0},sick:false,logs:{}};
 S.stats=S.stats||{STR:0,STA:0,MND:0,WIL:0,FOC:0,DIS:0};S.logs=S.logs||{};S.level=Math.max(1,Math.min(365,S.level||1));S.checkpoint=S.checkpoint||0;
+S.weight=S.weight||{start:103,current:103,goal:80};
+S.nutritionDays=S.nutritionDays||{};
+S.macroTargets=S.macroTargets||{calories:2000,protein:160,netCarbs:25,fat:140,fiber:30,water:2.5};
 const save=()=>localStorage.setItem(KEY,JSON.stringify(S));
 S.calendar=S.calendar||{};
 const dateKey=(d=new Date())=>{let y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
@@ -40,6 +43,21 @@ function render(){
  const todayState=S.calendar?.[dateKey()];dayStatus.textContent=S.sick?'PROTECTED':todayState?.completed?'COMPLETED · RESET 00:00':'IN PROGRESS · RESET 00:00';
  document.querySelectorAll('[data-q]').forEach(e=>e.onchange=()=>{S.logs[l]=S.logs[l]||{};S.logs[l][e.dataset.q]=e.checked;save()});document.querySelectorAll('[data-ex]').forEach(e=>e.onchange=()=>{S.logs[l]=S.logs[l]||{};let [i,t]=e.dataset.ex.split('-');S.logs[l]['e'+i+t]=e.value;save()})
 }
+
+const macroDefs=[['calories','Calories','kcal'],['protein','Protein','g'],['netCarbs','Net Carbs','g'],['fat','Fat','g'],['fiber','Fiber','g'],['water','Water','L']];
+function nutritionToday(){const k=dateKey();S.nutritionDays[k]=S.nutritionDays[k]||{calories:0,protein:0,netCarbs:0,fat:0,fiber:0,water:0,electrolyteGrams:0};return S.nutritionDays[k]}
+function renderWeightAndMacros(){
+ const w=S.weight||{start:103,current:103,goal:80};weightStart.value=w.start;weightCurrent.value=w.current;weightGoal.value=w.goal;
+ const total=Math.abs(Number(w.start)-Number(w.goal)),done=Math.max(0,Math.min(total,Math.abs(Number(w.start)-Number(w.current)))),pct=total?Math.round(done/total*100):0;
+ weightPct.textContent=`${pct}% REACHED`;weightBar.style.width=pct+'%';const rem=Math.max(0,Math.abs(Number(w.current)-Number(w.goal)));weightRemaining.textContent=`${rem.toFixed(1)} kg remaining`;
+ const day=nutritionToday();macroGrid.innerHTML=macroDefs.map(([k,label,unit])=>{const v=Number(day[k]||0),t=Number(S.macroTargets[k]||0),pc=t?Math.min(100,Math.round(v/t*100)):0;return `<div class='macroItem'><div class='macroTop'><b>${label}</b><span>${v} / ${t} ${unit}</span></div><div class='macroInputs'><label>Today<input type='number' step='${k==='water'?'.1':'1'}' min='0' data-macro='${k}' value='${v}'></label><label>Target<input type='number' step='${k==='water'?'.1':'1'}' min='0' data-target='${k}' value='${t}'></label></div><div class='miniProgress'><i style='width:${pc}%'></i></div></div>`}).join('');
+ electrolyteGrams.value=day.electrolyteGrams||'';const g=Math.max(0,Number(day.electrolyteGrams||0)),factor=g/5;electrolyteTotals.innerHTML=`<span>Na ${Math.round(430*factor)} mg · K ${Math.round(180*factor)} mg · Mg ${Math.round(94*factor)} mg</span><span>${g} g logged</span>`;
+ document.querySelectorAll('[data-macro]').forEach(e=>e.onchange=()=>{nutritionToday()[e.dataset.macro]=Math.max(0,Number(e.value||0));save();renderWeightAndMacros()});
+ document.querySelectorAll('[data-target]').forEach(e=>e.onchange=()=>{S.macroTargets[e.dataset.target]=Math.max(0,Number(e.value||0));save();renderWeightAndMacros()});
+}
+[weightStart,weightCurrent,weightGoal].forEach((e,i)=>e.onchange=()=>{const keys=['start','current','goal'];S.weight[keys[i]]=Number(e.value||0);save();renderWeightAndMacros()});
+electrolyteGrams.onchange=()=>{nutritionToday().electrolyteGrams=Math.max(0,Number(electrolyteGrams.value||0));save();renderWeightAndMacros()};
+
 modeBtn.onclick=()=>{S.sick=!S.sick;S.calendar=S.calendar||{};S.calendar[dateKey()]=S.calendar[dateKey()]||{};S.calendar[dateKey()].protected=S.sick;save();render()};
 sleep.onchange=()=>{S.logs[S.level]=S.logs[S.level]||{};S.logs[S.level].sleep=sleep.value;save()};nutrition.onchange=()=>{S.logs[S.level]=S.logs[S.level]||{};S.logs[S.level].nutrition=nutrition.checked;save()};
 completeDay.onclick=()=>{
@@ -50,4 +68,4 @@ completeDay.onclick=()=>{
  if(S.level%5===0){S.checkpoint=S.level;alert(`BLOCK COMPLETE — LV${S.level}\nCheckpoint LV${S.level} permanently secured.`)}
  if(S.level<365)S.level++;S.penaltyProcessedThrough=today;save();render()
 };
-reconcileMissedDays();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');render();
+reconcileMissedDays();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');render();renderWeightAndMacros();
