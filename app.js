@@ -11,6 +11,16 @@ S.weight=S.weight||{start:103,current:103,goal:80};
 S.nutritionDays=S.nutritionDays||{};
 S.macroTargets=S.macroTargets||{calories:2000,protein:160,netCarbs:25,fat:140,fiber:30,water:2.5};
 S.fasting=S.fasting||{selectedHours:0,active:false,startAt:null,totalPoints:0,completed24:0,completed48:0};
+// V7 tracks which attribute points came from Main Quest days so optional/bonus rewards are never deducted by punishment.
+if(!S.mainQuestStats){
+  const fastingPoints=Math.max(0,Number(S.fasting.totalPoints||0));
+  S.mainQuestStats={
+    STR:Math.max(0,Number(S.stats.STR||0)),
+    STA:Math.max(0,Number(S.stats.STA||0)),
+    MND:Math.max(0,Number(S.stats.MND||0)),
+    DIS:Math.max(0,Number(S.stats.DIS||0)-fastingPoints)
+  };
+}
 const save=()=>localStorage.setItem(KEY,JSON.stringify(S));
 S.calendar=S.calendar||{};
 const dateKey=(d=new Date())=>{let y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
@@ -30,11 +40,21 @@ function reconcileMissedDays(){
   while(daysBetween(cursor,yesterday)>=0){
     const day=S.calendar?.[cursor];
     const protectedDay=day?.completed||day?.protected;
-    if(!protectedDay && S.level>S.checkpoint){S.level--;lost++}
+    if(!protectedDay && S.level>S.checkpoint){
+      S.level--;lost++;
+      // A missed Main Quest day reverses one day of Main-Quest attribute progress.
+      // Bonus/optional rewards (for example Fasting Challenge WIL/DIS) are kept.
+      ['STR','STA','MND','DIS'].forEach(stat=>{
+        if((S.mainQuestStats[stat]||0)>0){
+          S.mainQuestStats[stat]--;
+          S.stats[stat]=Math.max(0,(S.stats[stat]||0)-1);
+        }
+      });
+    }
     cursor=addDays(cursor,1);
   }
   S.penaltyProcessedThrough=yesterday;save();
-  if(lost) setTimeout(()=>alert(`SYSTEM CONSEQUENCE\n${lost} missed progression day${lost>1?'s':''}: -${lost} LV\nCheckpoint protection: LV${S.checkpoint}`),150);
+  if(lost) setTimeout(()=>alert(`SYSTEM CONSEQUENCE\n${lost} missed Main Quest day${lost>1?'s':''}: -${lost} LV\n-${lost} Main Quest attribute point${lost>1?'s':''} from STR · STA · MND · DIS\nOptional/bonus points are protected.\nCheckpoint protection: LV${S.checkpoint}`),150);
 }
 function render(){
  document.body.classList.toggle('sick',S.sick);let l=S.level,r=requirements(l),p=currentPlan(),blockStart=Math.floor((l-1)/5)*5+1,day=(l-blockStart)+1;
@@ -65,7 +85,7 @@ completeDay.onclick=()=>{
  if(S.sick){alert('Sick / Injury Mode is active. Today is protected and progression is paused.');return}
  const today=dateKey();S.calendar=S.calendar||{};if(S.calendar[today]?.completed){alert('DAILY LIMIT REACHED\nYou can gain only 1 Player Level per calendar day.\nNext progression unlocks at 00:00.');return}
  let r=requirements(S.level),log=S.logs[S.level]||{},needed=['str','steps','read'].concat(r.trading?['trading']:[]);if(!needed.every(k=>log[k])){alert('Complete all Main Quests first. Bonus quests do not block progression.');return}
- S.stats.STR++;S.stats.STA++;S.stats.MND++;S.stats.DIS++;S.calendar[today]={...(S.calendar[today]||{}),completed:true,level:S.level,completedAt:new Date().toISOString()};
+ ['STR','STA','MND','DIS'].forEach(stat=>{S.stats[stat]=(S.stats[stat]||0)+1;S.mainQuestStats[stat]=(S.mainQuestStats[stat]||0)+1});S.calendar[today]={...(S.calendar[today]||{}),completed:true,level:S.level,completedAt:new Date().toISOString()};
  if(S.level%5===0){S.checkpoint=S.level;alert(`BLOCK COMPLETE — LV${S.level}\nCheckpoint LV${S.level} permanently secured.`)}
  if(S.level<365)S.level++;S.penaltyProcessedThrough=today;save();render()
 };
